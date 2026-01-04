@@ -1,0 +1,2 @@
+create the .env file
+create a groq key to use
