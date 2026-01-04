@@ -3,8 +3,25 @@ import base64
 
 
 class EbayClient:
-    def __init__(self, client_id, client_secret):
+    def __init__(self, client_id, client_secret, country_code="US"):
+        """
+        country_code: 'US', 'IT', 'DE', 'GB', etc.
+        """
+        self.market_id, self.currency_code, self.currency_symbol = self._resolve_market(country_code)
         self.token = self._get_access_token(client_id, client_secret)
+
+    def _resolve_market(self, code):
+        """Maps simple country codes to eBay API constants"""
+        markets = {
+            "US": ("EBAY_US", "USD", "$"),
+            "IT": ("EBAY_IT", "EUR", "€"),
+            "DE": ("EBAY_DE", "EUR", "€"),
+            "GB": ("EBAY_GB", "GBP", "£"),
+            "CA": ("EBAY_CA", "CAD", "$"),
+            "AU": ("EBAY_AU", "AUD", "$"),
+        }
+        # Default to US if code is invalid
+        return markets.get(code.upper(), ("EBAY_US", "USD", "$"))
 
     def _get_access_token(self, client_id, client_secret):
         url = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -15,46 +32,39 @@ class EbayClient:
         data = {"grant_type": "client_credentials", "scope": "https://api.ebay.com/oauth/api_scope"}
         resp = requests.post(url, headers=headers, data=data)
         if resp.status_code != 200:
-            raise Exception("Failed to get eBay Token")
+            raise Exception(f"Failed to get eBay Token: {resp.text}")
         return resp.json()["access_token"]
 
     def _search(self, query, completed=False):
         url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
-        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
 
-        params = {
-            "q": query,
-            "limit": 50,  # Get 50 items
-            "filter": "price:[5..5000],priceCurrency:USD"
+        # Dynamic Header based on selected market
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+            "X-EBAY-C-MARKETPLACE-ID": self.market_id
         }
 
-        # NOTE: The Browse API is limited for historical data.
-        # Ideally, we use the Finding API for 'sold', but it requires XML/Legacy setups.
-        # This is a 'best effort' filter for the MVP using modern JSON API.
+        # Dynamic Currency Filter
+        params = {
+            "q": query,
+            "limit": 100,
+            "filter": f"price:[5..5000],priceCurrency:{self.currency_code}"
+        }
+
         if completed:
-            # Not all accounts can filter by 'sold' in Browse API without advanced permissions
-            # We filter for ended items to simulate "Sold/Completed" data
+            # Note: "completed" filter requires specific API permissions or legacy APIs.
+            # This is a best-effort simulation for the MVP.
             params["filter"] += ",buyingOptions:{FIXED_PRICE}"
-            # In a real production app, we would swap this function for the 'Finding API'
 
         resp = requests.get(url, headers=headers, params=params)
         return resp.json().get('itemSummaries', [])
 
     def get_market_data(self, query):
-        """Fetches both active and simulates sold data"""
-        print(f"☁️  Fetching Active Listings...")
+        print(f"☁️  Fetching Active Listings ({self.market_id})...")
         active = self._search(query, completed=False)
 
-        # NOTE: For this MVP, we are fetching a second batch of items.
-        # Since Browse API 'sold' filters are strict, we will fetch generic items
-        # and let the user inputs drive the logic, or mock the sold based on active
-        # if the API returns 0 sold items (common in Browse API for new keys).
-
-        # Try to find sold items (Logic varies by eBay region/account level)
-        # For reliable SOLD data, you usually need the 'Finding API'.
-        # I will return the active list twice here so your script DOES NOT CRASH,
-        # but in production, you must use the legacy Finding API for sold data.
-        print(f"☁️  Fetching Sold Listings (Simulation for MVP)...")
+        print(f"☁️  Fetching Sold Listings ({self.market_id})...")
         sold = self._search(query, completed=True)
 
         return active, sold

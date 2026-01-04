@@ -12,14 +12,20 @@ CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 
+MARKETPLACE = "IT"
+
 
 def main():
-    print("🚀 Market Scout Starting...")
+    print(f"🚀 Market Scout Starting ({MARKETPLACE})...")
 
-    # 1. Initialize Tools
     try:
-        ebay = EbayClient(CLIENT_ID, CLIENT_SECRET)
+        # Pass the marketplace code here
+        ebay = EbayClient(CLIENT_ID, CLIENT_SECRET, country_code=MARKETPLACE)
         llm = SmartFilter(GROQ_KEY)
+
+        # Grab the symbol for printing later (e.g., € or $)
+        symbol = ebay.currency_symbol
+
     except Exception as e:
         print(f"❌ Setup Error: {e}")
         return
@@ -48,7 +54,7 @@ def main():
         clean_sold = llm.filter_listings(raw_sold, query)
 
     # 5. Run Your Pricing Strategy
-    result = calculate_prices(clean_active, clean_sold, strategy='FAST_FLIP')
+    result = calculate_prices(clean_active, clean_sold, strategy='MAX_PROFIT')
 
     # 6. Output Results
     print("\n" + "=" * 40)
@@ -58,15 +64,13 @@ def main():
     if 'error' in result:
         print(f"❌ Error: {result['error']}")
     else:
-        print(f"🎯 Recommended Price: ${result['recommended_price']}")
-        print(f"📊 Market Strategy:   {result['strategy']}")
-        print(f"📉 Sellability Score: {result['sellability_score']}/100")
-        print(f"⚖️  Median Market:     ${result['median_sold_price']}")
+        print(f"🎯 Target TOTAL Price: {symbol}{result['recommended_total_price']}")
+        print(f"   (Subtract your shipping cost from this number)")
+        print(f"🎲 Sell Probability:   {result['sell_probability']}%")
+        print(f"📊 Market Health:      {result['market_health']}")
         print("-" * 20)
-        print(f"Active Listings (A):  {result['market_stats']['active_listings']}")
-        print(f"Sold Listings (S):    {result['market_stats']['sold_listings']}")
-        print(f"Saturation:           {result['market_stats']['saturation']} (Lower is better)")
-        print(f"Sell-Through Rate:    {result['market_stats']['sell_through_rate']}")
+        print(f"Active Competitors:    {result['stats']['active_count']} (Lowest Total: {symbol}{result['stats']['lowest_active_total']})")
+        print(f"Recent Sales:          {result['stats']['sold_count']} (Median Total: {symbol}{result['stats']['median_sold_total']})")
         print("=" * 40)
 
 

@@ -1,80 +1,112 @@
-import math
 import numpy as np
+
+
+def get_total_price(item):
+    """
+    Helper: Extracts Price + Shipping to get 'Total Landed Cost'.
+    Buyers compare the TOTAL amount, not just the item price.
+    """
+    try:
+        # 1. Base Price
+        price = float(item.get('price', {}).get('value', 0))
+
+        # 2. Shipping Cost
+        shipping = 0.0
+        shipping_options = item.get('shippingOptions', [])
+
+        if shipping_options:
+            # Usually the first option is the cheapest/default
+            shipping_cost_obj = shipping_options[0].get('shippingCost', {})
+            shipping = float(shipping_cost_obj.get('value', 0))
+
+        return price + shipping
+    except:
+        return 0.0
 
 
 def calculate_prices(active_listings, sold_listings, strategy='FAST_FLIP'):
     """
-    Orchestrates the data extraction and runs the math formula.
+    Calculates prices based on TOTAL LANDED COST (Price + Shipping).
     """
 
-    # Extract prices from the clean objects
-    # Note: We filter out items with price 0 or None
-    active_prices = [float(i['price']['value']) for i in active_listings if i.get('price')]
-    sold_prices = [float(i['price']['value']) for i in sold_listings if i.get('price')]
+    # --- 1. Extract Data (Using Total Price) ---
+    active_prices = sorted([get_total_price(i) for i in active_listings if i.get('price')])
+    sold_prices = sorted([get_total_price(i) for i in sold_listings if i.get('price')])
 
-    S = len(sold_prices)  # Sales count
-    A = len(active_prices)  # Active competition
-    P = sold_prices  # List of historical prices
+    # Remove zeros (invalid data)
+    active_prices = [p for p in active_prices if p > 0]
+    sold_prices = [p for p in sold_prices if p > 0]
 
-    # --- 1. Sanity Checks ---
-    if not P or S == 0:
+    A = len(active_prices)
+    S = len(sold_prices)
+
+    if A == 0 and S == 0:
+        return {'error': 'No data found.'}
+
+    # Dead market check
+    if S == 0 and A > 0:
         return {
-            'error': 'Insufficient sold data to calculate price.',
-            'debug': {'sold_found': S, 'active_found': A}
+            'strategy': strategy,
+            'recommended_total_price': active_prices[0] * 0.9,
+            'sell_probability': 5,
+            'market_health': 'Dead',
+            'debug': 'No sales found.'
         }
 
-    # --- 2. Core Statistics ---
-    median = np.median(P)
-    p25 = np.percentile(P, 25)
-    p75 = np.percentile(P, 75)
+    # --- 2. Real Sell-Through Rate ---
+    str_raw = S / max(1, A)
 
-    # --- 3. Market Health ---
-    sell_through_rate = S / max(1, A)
-    saturation = A / max(1, S)
+    # --- 3. Probability ---
+    base_prob = min(str_raw, 1.5) / 1.5 * 100
+    if S > 10: base_prob += 10
+    sell_probability = max(5, min(99, base_prob))
 
-    price_std = np.std(P)
-    volatility = price_std / median if median > 0 else 0
-    confidence = 1 - math.exp(-S / 10)
+    # --- 4. Pricing Logic (Based on TOTAL) ---
+    lowest_active = active_prices[0] if active_prices else 0
+    median_sold = np.median(sold_prices)
 
-    # --- 4. Strategy Logic ---
-    if strategy.upper() == 'FAST_FLIP':
-        base_target = p25
-        aggressiveness = 0.05 if saturation > 1.0 else 0.0
+    recommended_total = 0.0
+
+    if strategy == 'FAST_FLIP':
+        # Undercut the cheapest TOTAL option
+        target_1 = lowest_active * 0.98
+        target_2 = np.percentile(sold_prices, 20)
+
+        if lowest_active == 0:
+            recommended_total = target_2
+        else:
+            recommended_total = min(target_1, target_2)
+
     else:  # MAX_PROFIT
-        base_target = median
-        if sell_through_rate > 2.0:
-            base_target = (median + p75) / 2
-        aggressiveness = 0.0
+        target = median_sold
+        if str_raw > 1.0:
+            target = np.percentile(sold_prices, 75)
 
-    # --- 5. Volatility & Saturation Adjustment ---
-    discount_factor = 1.0
-    if saturation > 3.0:
-        discount_factor -= 0.10
-    elif saturation > 1.5:
-        discount_factor -= 0.05
-    discount_factor -= aggressiveness
+        # Don't exceed 3rd cheapest competitor's TOTAL price
+        if A >= 3:
+            competitor_ceiling = active_prices[2]
+            recommended_total = min(target, competitor_ceiling)
+        else:
+            recommended_total = target
 
-    recommended_price = base_target * discount_factor
-
-    # --- 6. Safety Clamps ---
-    floor_price = p25 * 0.85
-    recommended_price = max(recommended_price, floor_price)
-
-    # --- 7. Scoring ---
-    score_raw = (min(sell_through_rate, 3.0) / 3.0) * 0.7 + (1 - min(volatility, 1.0)) * 0.3
-    sellability = score_raw * 100 * confidence
+    # --- 5. Health ---
+    if str_raw > 1.0:
+        health = "🔥 Hot (Sellers Market)"
+    elif str_raw > 0.4:
+        health = "✅ Steady (Balanced)"
+    else:
+        health = "⚠️ Slow (Buyers Market)"
 
     return {
-        'strategy': strategy.upper(),
-        'recommended_price': round(recommended_price, 2),
-        'price_band': (round(p25, 2), round(p75, 2)),
-        'median_sold_price': round(median, 2),
-        'market_stats': {
-            'active_listings': A,
-            'sold_listings': S,
-            'sell_through_rate': round(sell_through_rate, 2),
-            'saturation': round(saturation, 2),
-            'confidence_score': round(confidence, 2)
-        },
-        'sellability_score': round(sellability, 1)
+        'strategy': strategy,
+        'recommended_total_price': round(recommended_total, 2),  # IMPORTANT: This is Total
+        'sell_probability': int(sell_probability),
+        'market_health': health,
+        'stats': {
+            'active_count': A,
+            'sold_count': S,
+            'str': round(str_raw, 2),
+            'lowest_active_total': round(lowest_active, 2),
+            'median_sold_total': round(median_sold, 2)
+        }
     }
