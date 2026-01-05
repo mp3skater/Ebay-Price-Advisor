@@ -31,8 +31,9 @@ def main():
         print("❌ No data found on eBay.")
         return
 
+    print("🤖 AI is cleaning the data (removing parts/fakes)...")
     clean_active = llm.filter_listings(raw_active, query)
-    clean_sold = raw_sold
+    clean_sold = llm.filter_listings(raw_sold, query)
 
     result = calculate_prices(clean_active, clean_sold, strategy="MAX_PROFIT")
 
