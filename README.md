@@ -125,4 +125,4 @@ This tool is for **educational and research purposes only**. eBay prices fluctua
 
 This project is not affiliated with eBay Inc.
 
-The License is the [MIT License]()
+The License is the [MIT License](LICENSE)
