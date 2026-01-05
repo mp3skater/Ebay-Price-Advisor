@@ -19,17 +19,21 @@ This tool automates the process of flipping items or valuing inventory. Instead 
 
 ## 📊 Sample Output
 
-![Demo](https://via.placeholder.com/800x400.png?text=Terminal+Output+Screenshot+Placeholder)
-
 ```text
+/Users/.../python /Users/mp3skater/.../ebayPrice/src/main.py
+
+🔎 Searching market data for: Xbox Series X Controller...
+   Found 100 active and 59 sold raw items.
+
+========================================
 💰 PRICE REPORT: Xbox Series X Controller
 ========================================
-🎯 Target TOTAL Price: €48.50
+🎯 Target TOTAL Price: €33.99
    (Subtract your shipping cost from this number)
-🎲 Sell Probability:   85%
+🎲 Sell Probability:   99%
 📊 Market Health:      🔥 Hot (Sellers Market)
-Active Competitors:    12 (Lowest Total: €52.00)
-Recent Sales:          60 (Median Total: €49.99)
+Active Competitors:    25 (Lowest Total: €24.99)
+Recent Sales:          59 (Median Total: €40.0)
 ========================================
 ```
 
