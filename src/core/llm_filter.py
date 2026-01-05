@@ -14,6 +14,7 @@ class SmartFilter:
         if not items:
             return []
         mini_list = [{"id": i.get("itemId"), "title": i.get("title"), "price": i.get("price", {}).get("value")} for i in items]
+        # DEBUG --> #print(mini_list)
         prompt = f"""
         I am a pricing algorithm. I have a list of eBay search results for: "{user_query}".
         TASK: Return a JSON object containing a list of IDs for items that are strictly relevant.
