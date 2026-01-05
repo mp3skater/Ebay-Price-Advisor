@@ -17,35 +17,47 @@ def get_total_price(item):
 
 
 def calculate_prices(active_listings, sold_listings, strategy="FAST_FLIP"):
-    active_prices = sorted([get_total_price(i) for i in active_listings if get_total_price(i) > 0])
+    # 1. Calculate Sold Prices First
     sold_prices = sorted([get_total_price(i) for i in sold_listings if get_total_price(i) > 0])
-
-    A, S = len(active_prices), len(sold_prices)
-
-    if A == 0 and S == 0:
-        return {"error": "No data found."}
+    S = len(sold_prices)
 
     if S == 0:
-        recommended = round(active_prices[0] * 0.9, 2) if A > 0 else 0
+        return {"error": "No sales data found to base price on."}
+
+    median_sold = np.median(sold_prices)
+
+    # 2. Filter Active Listings
+    # Ignore active listings that are suspicious (less than 40% of the median sold price)
+    # This removes accessories/parts that the AI might have missed.
+    min_price_threshold = median_sold * 0.40
+
+    raw_active_prices = [get_total_price(i) for i in active_listings if get_total_price(i) > 0]
+    active_prices = sorted([p for p in raw_active_prices if p >= min_price_threshold])
+
+    A = len(active_prices)
+
+    if A == 0:
+        # If no valid competitors, just price slightly under market value
         return {
             "strategy": strategy,
-            "recommended_total_price": recommended,
-            "sell_probability": 5,
-            "market_health": "Dead",
-            "stats": {"active_count": A, "sold_count": 0, "str": 0,
-                      "lowest_active_total": round(active_prices[0], 2) if A else 0, "median_sold_price": 0},
+            "recommended_total_price": round(median_sold * 0.95, 2),
+            "sell_probability": 80,
+            "market_health": "Unknown",
+            "stats": {"active_count": 0, "sold_count": S, "str": 0, "lowest_active_total": 0,
+                      "median_sold_price": round(median_sold, 2)}
         }
 
+    # 3. Standard Logic
     str_raw = S / max(1, A)
     base_prob = min(str_raw, 1.5) / 1.5 * 100
     if S > 10: base_prob += 10
     sell_probability = max(5, min(99, base_prob))
 
-    lowest_active = active_prices[0] if active_prices else 0
-    median_sold = np.median(sold_prices)
+    lowest_active = active_prices[0]
 
     if strategy == "FAST_FLIP":
-        target_1 = lowest_active * 0.98 if lowest_active > 0 else median_sold
+        # Undercut the lowest VALID competitor
+        target_1 = lowest_active * 0.98
         target_2 = np.percentile(sold_prices, 20)
         recommended_total = min(target_1, target_2)
     else:

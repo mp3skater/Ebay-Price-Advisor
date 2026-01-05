@@ -42,7 +42,7 @@ class EbayClient:
         params = {
             "q": query,
             "limit": 100,
-            "filter": f"price:[5..5000],priceCurrency:{self.currency_code}"
+            "filter": f"price:[5..5000],priceCurrency:{self.currency_code},buyingOptions:{{FIXED_PRICE}},deliveryOptions:{{SHIP_TO_HOME}}"
         }
         resp = requests.get(url, headers=headers, params=params)
         return resp.json().get('itemSummaries', [])
