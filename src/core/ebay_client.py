@@ -1,13 +1,11 @@
 import requests
 import base64
-import serpapi
 
 
 class EbayClient:
-    def __init__(self, client_id, client_secret, serpapi_key, country_code="US"):
+    def __init__(self, client_id, client_secret, country_code="US"):
         self.market_id, self.currency_code, self.currency_symbol, self.domain = self._resolve_market(country_code)
         self.token = self._get_access_token(client_id, client_secret)
-        self.serpapi_key = serpapi_key
 
     def _resolve_market(self, code):
         markets = {
@@ -47,40 +45,47 @@ class EbayClient:
         resp = requests.get(url, headers=headers, params=params)
         return resp.json().get('itemSummaries', [])
 
-    def get_sold_items(self, query):
-        params = {
-            "api_key": self.serpapi_key,
-            "engine": "ebay",
-            "ebay_domain": self.domain,
-            "_nkw": query,
-            "LH_Sold": "1",
-            "LH_Complete": "1",
-            "LH_ItemCondition": "3000",
-            "limit": 100
+    def get_sold_items(self, query, limit=100):
+        """
+        Pure eBay Browse API for sold items (90 days). No SerpApi needed.
+        """
+        url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+            "X-EBAY-C-MARKETPLACE-ID": self.market_id
         }
+        params = {
+            "q": query,
+            "limit": limit,
+            "filter": f" soldItems:true,priceCurrency:{self.currency_code}",
+            "fieldgroups": "SELLER_INFO"  # Optional: adds seller details
+        }
+
         try:
-            client = serpapi.Client(api_key=self.serpapi_key)
-            results = client.search(params)
-            raw_items = results.get("organic_results", [])
+            resp = requests.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            data = resp.json().get('itemSummaries', [])
 
             cleaned = []
-            for item in raw_items:
-                p_obj = item.get("price", {})
-                price = p_obj.get("extracted") if isinstance(p_obj, dict) else p_obj
+            for item in data:
+                price_val = float(item['price']['value'])
+                shipping_val = float(item.get('shippingCost', {}).get('value', 0.0))
 
-                s_obj = item.get("shipping", {})
-                shipping = s_obj.get("extracted") if isinstance(s_obj, dict) else 0.0
-
-                if price:
-                    cleaned.append({
-                        "itemId": item.get("item_id") or item.get("link"),
-                        "title": item.get("title"),
-                        "price": {"value": price},
-                        "shipping_cost": shipping
-                    })
+                cleaned.append({
+                    "itemId": item['itemId'],
+                    "title": item['title'],
+                    "price": {"value": price_val},
+                    "shipping_cost": shipping_val,
+                    "soldDate": item.get('lastSoldDate')  # Bonus: actual sale date
+                })
             return cleaned
-        except Exception as e:
-            print(f"SerpApi Error: {e}")
+
+        except requests.RequestException as e:
+            print(f"eBay API Error: {e}")
+            return []
+        except (KeyError, ValueError, IndexError) as e:
+            print(f"Data parse error: {e}")
             return []
 
     def get_market_data(self, query):

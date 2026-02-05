@@ -16,11 +16,11 @@ def main():
         print("❌ Error: SERPAPI_KEY is missing in .env")
         return
 
-    ebay = EbayClient(CLIENT_ID, CLIENT_SECRET, SERPAPI_KEY, country_code=MARKETPLACE)
+    ebay = EbayClient(CLIENT_ID, CLIENT_SECRET, country_code=MARKETPLACE)
     llm = SmartFilter(GROQ_KEY)
     symbol = ebay.currency_symbol
 
-    query = "Xbox Series X Controller"
+    query = "IPhone 15 pro max"
 
     print(f"🔎 Searching market data for: {query}...")
     raw_active, raw_sold = ebay.get_market_data(query)
