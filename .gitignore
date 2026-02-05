@@ -4,3 +4,5 @@ __pycache__/
 ex-files/
 .venv/
 .idea/
+dump.py
+project_code_dump.txt
