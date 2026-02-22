@@ -1,57 +1,67 @@
 import os
+from fastapi import FastAPI, HTTPException, Query
 from dotenv import load_dotenv
-from src.core.ebay_client import EbayClient
-from src.core.llm_filter import SmartFilter
-from src.core.pricing_engine import calculate_prices
 
+# Import your core modules
+from core.ebay_client import EbayClient, Condition
+from core.llm_filter import SmartFilter
+from core.pricing_engine import calculate_prices
+
+# Load env variables (useful for local testing, Vercel injects them automatically)
 load_dotenv()
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-GROQ_KEY = os.getenv("GROQ_API_KEY")
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-MARKETPLACE = "IT"
 
-def main():
-    if not SERPAPI_KEY:
-        print("❌ Error: SERPAPI_KEY is missing in .env")
-        return
+app = FastAPI(title="eBay Pricing Engine API")
 
-    ebay = EbayClient(CLIENT_ID, CLIENT_SECRET, country_code=MARKETPLACE)
-    llm = SmartFilter(GROQ_KEY)
-    symbol = ebay.currency_symbol
 
-    query = "IPhone 15 pro max"
+@app.get("/")
+def read_root():
+    return {"message": "eBay Pricing Engine is running!"}
 
-    print(f"🔎 Searching market data for: {query}...")
-    raw_active, raw_sold = ebay.get_market_data(query)
 
-    print(f"   Found {len(raw_active)} active and {len(raw_sold)} sold raw items.")
+@app.get("/api/pricing")
+def get_pricing(
+        query: str = Query(..., description="The search query, e.g., 'VITALIANO PANCALDI cravatta'"),
+        details: str = Query("No Details", description="Constraints for the LLM"),
+        condition: str = Query("USED", description="Condition: NEW, USED, OPEN_BOX, etc."),
+        market: str = Query("IT", description="Marketplace, e.g., IT, US, UK")
+):
+    CLIENT_ID = os.getenv("CLIENT_ID")
+    CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+    GROQ_KEY = os.getenv("GROQ_API_KEY")
 
-    if not raw_active and not raw_sold:
-        print("❌ No data found on eBay.")
-        return
+    if not CLIENT_ID or not CLIENT_SECRET or not GROQ_KEY:
+        raise HTTPException(status_code=500, detail="Missing API keys in environment variables.")
 
-    print("🤖 AI is cleaning the data (removing parts/fakes)...")
-    clean_active = llm.filter_listings(raw_active, query)
-    clean_sold = llm.filter_listings(raw_sold, query)
+    # Convert string condition to Enum
+    try:
+        target_condition = Condition[condition.upper()]
+    except KeyError:
+        target_condition = Condition.USED
 
-    result = calculate_prices(clean_active, clean_sold, strategy="MAX_PROFIT")
+    try:
+        ebay = EbayClient(CLIENT_ID, CLIENT_SECRET, country_code=market)
+        llm = SmartFilter(GROQ_KEY)
 
-    print("\n" + "="*40)
-    print(f"💰 PRICE REPORT: {query}")
-    print("="*40)
+        # 1. Fetch from eBay
+        raw_active, raw_sold = ebay.get_market_data(query, condition=target_condition)
 
-    if "error" in result:
-        print(f"❌ Error: {result['error']}")
-    else:
-        print(f"🎯 Target TOTAL Price: {symbol}{result['recommended_total_price']}")
-        print(f"   (Subtract your shipping cost from this number)")
-        print(f"🎲 Sell Probability:   {result['sell_probability']}%")
-        print(f"📊 Market Health:      {result['market_health']}")
-        stats = result.get("stats", {})
-        print(f"Active Competitors:    {stats.get('active_count',0)} (Lowest Total: {symbol}{stats.get('lowest_active_total','N/A')})")
-        print(f"Recent Sales:          {stats.get('sold_count',0)} (Median Total: {symbol}{stats.get('median_sold_price','N/A')})")
-        print("="*40)
+        if not raw_active and not raw_sold:
+            return {"error": "No data found on eBay for this query."}
 
-if __name__ == "__main__":
-    main()
+        # 2. Filter with LLM
+        clean_active = llm.filter_listings(raw_active, query, details=details)
+        clean_sold = llm.filter_listings(raw_sold, query, details=details)
+
+        # 3. Calculate Prices
+        result = calculate_prices(clean_active, clean_sold, strategy="MAX_PROFIT")
+
+        return {
+            "success": True,
+            "query": query,
+            "condition": target_condition.name,
+            "currency_symbol": ebay.currency_symbol,
+            "data": result
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

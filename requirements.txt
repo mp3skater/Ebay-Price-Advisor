@@ -2,5 +2,11 @@ numpy~=2.4.0
 requests~=2.32.5
 python-dotenv~=1.2.1
 groq~=1.0.0
-protobuf~=5.29.5
+protobuf~=6.33.5
 serpapi~=0.1.5
+fastapi==0.109.1
+uvicorn==0.24.0
+requests==2.32.4
+numpy==1.26.2
+groq==0.4.2
+python-dotenv==1.0.0
